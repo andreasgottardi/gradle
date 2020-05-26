@@ -1,0 +1,67 @@
+plugins {
+	id "java"
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation "fish.payara.distributions:payara:+"
+}
+
+/* Downloads Payara into the build directory and removes possible version numbers from the zip file. */
+task download(type: Copy, group: "build", description: "Download payara server.") {
+	dependsOn clean
+	from sourceSets.main.runtimeClasspath
+	into "${buildDir}/download"
+	rename 'payara-(.*)', 'payara.zip'
+}
+
+/* Extracts Payara. */
+task unzip(type: Copy, group: "build", description: "Extract payara server.") {
+	dependsOn download
+	def zipFile = file("${buildDir}/download/payara.zip")
+	def outputDir = file("${buildDir}/unpacked")
+	from zipTree(zipFile)
+	into outputDir
+}
+
+/* Payaras root folder in the zip file ends with the major version number. The number is removed for easier handling. */
+task removeversnr(group: "build", description: "Rename payara server.") {
+	dependsOn unzip
+	doLast {
+		def dirName = "${buildDir}/unpacked"
+		file ("${dirName}").list().each {
+			f -> ant.move(file: "${dirName}/${f}", tofile: "${dirName}/payara")
+		}
+	}
+}
+
+/* Configures the AS_JAVA parameter in the asenv.(bat|conf) file to a default value. */
+task configureJava(group: "build", description: "Configure asenv.bat.") {
+	dependsOn removeversnr
+	doLast {
+		ant.replace(
+			file: "${buildDir}/unpacked/payara/glassfish/config/asenv.bat",
+			token: 'AS_INSTALL=..',
+			value: 'AS_INSTALL=..\r\nset AS_JAVA=C:\\Program Files\\Java\\Stable'
+		)
+		ant.replace(
+			file: "${buildDir}/unpacked/payara/glassfish/config/asenv.conf",
+			token: 'AS_INSTALL=".."',
+			value: 'AS_INSTALL=".."\r\nAS_JAVA="/opt/java/stable"'
+		)
+	}
+}
+
+/* Removes the predefined domains. Most users have their own domains with specific parameters already set. */
+task deleteDefaultDomains(type: Delete, group: "build", description: "Delete predefined domains.") {
+	dependsOn configureJava
+	doLast {
+		def dirName = "${buildDir}/unpacked/payara/glassfish/domains"
+		file ("${dirName}").list().each {
+			f -> delete "${dirName}/${f}" 
+		}
+	}
+}
