@@ -10,12 +10,33 @@ dependencies {
 	implementation "fish.payara.distributions:payara:+"
 }
 
+ext {
+	payaravers = 'undefined'
+}
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+task getVersion(group: 'build', description: 'Evaluates payara versions from dependencies.') {
+	dependsOn clean
+	sourceSets.main.runtimeClasspath.each {
+		if("$it".contains('fish.payara.distributions')){
+			String[] str = "$it".split('(\\\\|/)');
+			String zip = str[str.size() - 1]
+			zip = zip.split('-')[1]
+			payaravers = zip.substring(0, zip.lastIndexOf('.'))
+		}
+	}
+	
+	println 'Used Payara version: ' + payaravers
+}
+
 /* Downloads Payara into the build directory and removes possible version numbers from the zip file. */
 task download(type: Copy, group: "build", description: "Download payara server.") {
-	dependsOn clean
+	dependsOn getVersion
 	from sourceSets.main.runtimeClasspath
 	into "${buildDir}/download"
-	rename 'payara-(.*)', 'payara.zip'
+	rename 'payara-' + payaravers + '.zip', 'payara.zip'
 }
 
 /* Extracts Payara. */
@@ -33,7 +54,7 @@ task removeversnr(group: "build", description: "Rename payara server.") {
 	doLast {
 		def dirName = "${buildDir}/unpacked"
 		file ("${dirName}").list().each {
-			f -> ant.move(file: "${dirName}/${f}", tofile: "${dirName}/payara")
+			f -> ant.move(file: "${dirName}/${f}", tofile: "${buildDir}/" + payaravers)
 		}
 	}
 }
@@ -43,12 +64,12 @@ task configureJava(group: "build", description: "Configure asenv.bat.") {
 	dependsOn removeversnr
 	doLast {
 		ant.replace(
-			file: "${buildDir}/unpacked/payara/glassfish/config/asenv.bat",
+			file: "${buildDir}/" + payaravers + "/glassfish/config/asenv.bat",
 			token: 'AS_INSTALL=..',
 			value: 'AS_INSTALL=..\r\nset AS_JAVA=C:\\Program Files\\Java\\Stable'
 		)
 		ant.replace(
-			file: "${buildDir}/unpacked/payara/glassfish/config/asenv.conf",
+			file: "${buildDir}/" + payaravers + "/glassfish/config/asenv.conf",
 			token: 'AS_INSTALL=".."',
 			value: 'AS_INSTALL=".."\r\nAS_JAVA="/opt/java/stable"'
 		)
@@ -59,7 +80,7 @@ task configureJava(group: "build", description: "Configure asenv.bat.") {
 task deleteDefaultDomains(type: Delete, group: "build", description: "Delete predefined domains.") {
 	dependsOn configureJava
 	doLast {
-		def dirName = "${buildDir}/unpacked/payara/glassfish/domains"
+		def dirName = "${buildDir}/" + payaravers + "/glassfish/domains"
 		file ("${dirName}").list().each {
 			f -> delete "${dirName}/${f}" 
 		}
